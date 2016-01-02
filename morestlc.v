@@ -102,10 +102,10 @@ Module STLCExtended.
              value (tm_abs x T11 t12)
   | v_pair: forall t1 t2,
                      value t1 -> value t2 -> value (tm_pair t1 t2)
-  (* | v_suml: forall t1 T, *)
-  (*             value t1 -> value (tm_inl T t1) *)
-  (* | v_sumr: forall t1 T, *)
-  (*             value t1 -> value (tm_inr T t1) *)
+  | v_suml: forall t1 T,
+              value t1 -> value (tm_inl T t1)
+  | v_sumr: forall t1 T,
+              value t1 -> value (tm_inr T t1)
   | v_nil: forall T,
              value (tm_nil T)
   | v_cons: forall t1 t2,
