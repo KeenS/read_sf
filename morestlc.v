@@ -102,6 +102,10 @@ Module STLCExtended.
              value (tm_abs x T11 t12)
   | v_pair: forall t1 t2,
                      value t1 -> value t2 -> value (tm_pair t1 t2)
+  (* | v_suml: forall t1 T, *)
+  (*             value t1 -> value (tm_inl T t1) *)
+  (* | v_sumr: forall t1 T, *)
+  (*             value t1 -> value (tm_inr T t1) *)
   | v_nil: forall T,
              value (tm_nil T)
   | v_cons: forall t1 t2,
@@ -144,7 +148,7 @@ Module STLCExtended.
                (tm_snd t1) ==> (tm_snd t1')
   | ST_SndPair: forall t1 t2,
                value (tm_pair t1 t2) ->
-               tm_snd (tm_pair t1 t2) ==> t1
+               tm_snd (tm_pair t1 t2) ==> t2
   | ST_Inl: forall T t1 t1',
                t1 ==> t1' ->
                (tm_inl T t1) ==> (tm_inl T t1')
@@ -185,7 +189,7 @@ Module STLCExtended.
                 (tm_pred t) ==> (tm_pred t')
   | ST_Pred2: forall n,
                 n <> 0 ->
-                (tm_pred (tm_nat n)) ==> tm_nat (1 + n)
+                (tm_pred (tm_nat n)) ==> tm_nat (n - 1)
   | ST_PredZero: (tm_pred (tm_nat 0)) ==> (tm_nat 0)
   | ST_Mult1: forall t1 t1' t2,
                 t1 ==> t1' ->
@@ -263,4 +267,226 @@ Module STLCExtended.
 
   Definition context := partial_map ty.
 
-  
+  Inductive has_type: context -> tm -> ty -> Prop :=
+  | T_Var: forall Gamma x T,
+             Gamma x = Some T ->
+             has_type Gamma (tm_var x) T
+  | T_Abs: forall Gamma x T11 T12 t12,
+             has_type (extend Gamma x T11) t12 T12 ->
+             has_type Gamma (tm_abs x T11 t12) (ty_arrow T11 T12)
+  | T_App: forall Gamma T1 T2 t1 t2,
+             has_type Gamma t1 (ty_arrow T1 T2) ->
+             has_type Gamma t2 T1 ->
+             has_type Gamma (tm_app t1 t2) T2
+  | T_Pair: forall Gamma T1 T2 t1 t2,
+              has_type Gamma t1 T1 ->
+              has_type Gamma t2 T2 ->
+              has_type Gamma (tm_pair t1 t2) (ty_prod T1 T2)
+  | T_Fst: forall Gamma T1 T2 t1,
+             has_type Gamma t1 (ty_prod T1 T2) ->
+             has_type Gamma (tm_fst t1) T1
+  | T_Snd: forall Gamma T1 T2 t1,
+             has_type Gamma t1 (ty_prod T1 T2) ->
+             has_type Gamma (tm_snd t1) T2
+  | T_Inl: forall Gamma T1 T2 t,
+             has_type Gamma t T1 ->
+             has_type Gamma (tm_inl T2 t) (ty_sum T1 T2)
+  | T_Inr: forall Gamma T1 T2 t,
+             has_type Gamma t T2 ->
+             has_type Gamma (tm_inr T1 t) (ty_sum T1 T2)
+  | T_Case: forall Gamma T1 T2 T t v1 t1 v2 t2,
+              has_type Gamma t (ty_sum T1 T2) ->
+              has_type (extend Gamma v1 T1) t1 T ->
+              has_type (extend Gamma v2 T1) t2 T ->
+              has_type Gamma (tm_case t v1 t1 v2 t2) T
+  | T_Nil: forall Gamma T,
+             has_type Gamma (tm_nil T) (ty_List T)
+  | T_Cons: forall Gamma T t1 t2,
+              has_type Gamma t1 T ->
+              has_type Gamma t2 (ty_List T) ->
+              has_type Gamma (tm_cons t1 t2) (ty_List T)
+  | T_Lcase: forall Gamma t1 T1 t2 T vh vt t3,
+               has_type Gamma t1 (ty_List T1) ->
+               has_type Gamma t2 T ->
+               has_type (extend (extend Gamma vh T1) vt (ty_List T1)) t3 T ->
+               has_type Gamma (tm_lcase t1 t2 vh vt t3) T
+  | T_Nat: forall Gamma n,
+             has_type Gamma (tm_nat n) ty_Nat
+  | T_Succ: forall Gamma n,
+              has_type Gamma n ty_Nat ->
+              has_type Gamma (tm_succ n) ty_Nat
+  | T_Pred: forall Gamma n,
+              has_type Gamma n ty_Nat ->
+              has_type Gamma (tm_pred n) ty_Nat
+  | T_Mult: forall Gamma n m,
+              has_type Gamma n ty_Nat ->
+              has_type Gamma m ty_Nat ->
+              has_type Gamma (tm_mult n m) ty_Nat
+  | T_If0: forall Gamma T tc tt te,
+            has_type Gamma tc ty_Nat ->
+            has_type Gamma tt T ->
+            has_type Gamma te T ->
+            has_type Gamma (tm_if0 tc tt te) T
+  | T_Let: forall Gamma T1 T v t1 t,
+             has_type Gamma t1 T1 ->
+             has_type (extend Gamma v T1) t T ->
+             has_type Gamma (tm_let v t1 t) T
+  | T_Fix: forall Gamma t T,
+             has_type Gamma t (ty_arrow T T) ->
+             has_type Gamma (tm_fix t) T.
+
+
+  Hint Constructors has_type.
+  Tactic Notation "has_type_cases" tactic(first) ident(c) :=
+    first;
+    [ Case_aux c "T_Var"
+    | Case_aux c "T_Abs"
+    | Case_aux c "T_App"
+    | Case_aux c "T_Pair"
+    | Case_aux c "T_Fst"
+    | Case_aux c "T_Snd"
+    | Case_aux c "T_Inl"
+    | Case_aux c "T_Inr"
+    | Case_aux c "T_Case"
+    | Case_aux c "T_Nil"
+    | Case_aux c "T_Cons"
+    | Case_aux c "T_Lcase"
+    | Case_aux c "T_Nat"
+    | Case_aux c "T_Succ"
+    | Case_aux c "T_Pred"
+    | Case_aux c "T_Mult"
+    | Case_aux c "T_If0"
+    | Case_aux c "T_Let"
+    | Case_aux c "T_T_Fix"
+    ].
+
+
+  Module Examples.
+    Notation a := (Id 0).
+    Notation f := (Id 1).
+    Notation g := (Id 2).
+    Notation l := (Id 3).
+    Notation k := (Id 6).
+    Notation i1 := (Id 7).
+    Notation i2 := (Id 8).
+    Notation x := (Id 9).
+    Notation y := (Id 10).
+    Notation processSum := (Id 11).
+    Notation n := (Id 12).
+    Notation eq := (Id 13).
+    Notation m := (Id 14).
+    Notation evenodd := (Id 15).
+    Notation even := (Id 16).
+    Notation odd := (Id 17).
+    Notation eo := (Id 18).
+
+    Hint Extern 2 (has_type _ (tm_app _ _) _) =>
+    eapply T_App; auto.
+
+    Hint Extern 2 (has_type _ (tm_lcase _ _ _ _ _) _) =>
+    eapply T_Lcase; auto.
+
+
+    Hint Extern 2 (_ = _) => compute; reflexivity.
+
+    Module Numtest.
+      Definition test :=
+        tm_if0
+          (tm_pred
+             (tm_succ
+                (tm_pred
+                   (tm_mult
+                      (tm_nat 2)
+                      (tm_nat 0)))))
+          (tm_nat 5)
+          (tm_nat 6).
+
+      Example typechecks: has_type (@empty ty) test ty_Nat.
+      Proof.
+        unfold test.
+        auto 10.
+      Qed.
+
+      Example numtest_reduces:
+        test ==>* tm_nat 5.
+      Proof.
+        unfold test.
+        normalize.
+      Qed.
+
+    End Numtest.
+
+    Module Prodtest.
+      Definition test :=
+        tm_snd
+          (tm_fst
+             (tm_pair
+                (tm_pair
+                   (tm_nat 5)
+                   (tm_nat 6))
+                (tm_nat 7))).
+      Example typechecks:
+        has_type (@empty ty) test ty_Nat.
+      Proof.
+        unfold test.
+        eauto 15.
+      Qed.
+
+      Example reduces:
+        test ==>* tm_nat 6.
+      Proof.
+        unfold test.
+        normalize.
+      Qed.
+
+
+    End Prodtest.
+
+    Module LetTest.
+      Definition test :=
+        tm_let
+          x
+          (tm_pred (tm_nat 6))
+          (tm_succ (tm_var x)).
+
+      Example typechecks:
+        has_type (@empty ty) test ty_Nat.
+      Proof.
+        unfold test.
+        eauto 15.
+      Qed.
+
+      Example reduces:
+        test ==>* tm_nat 6.
+      Proof.
+        unfold test.
+        normalize.
+      Qed.
+
+    End LetTest.
+
+
+    Module Sumtest1.
+      Definition test :=
+        tm_case (tm_inl ty_Nat (tm_nat 5))
+                x (tm_var x)
+                y (tm_var y).
+
+      Example typechecks:
+        has_type (@empty ty) test ty_Nat.
+      Proof.
+        unfold test.
+        eauto 15.
+      Qed.
+
+      (* Example reduces: *)
+      (*   test ==>* (tm_nat 5). *)
+      (* Proof. *)
+      (*   unfold test. *)
+      (*   eapply rsc_step. *)
+      (*   eapply ST_CaseInl *)
+      (*   apply v_suml. *)
+      (*   eapply v_suml. *)
+      (*   apply *)
+    End Sumtest1.
+
