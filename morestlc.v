@@ -111,10 +111,7 @@ Module STLCExtended.
   | v_cons: forall t1 t2,
               value t1 -> value t2 -> value (tm_cons t1 t2)
   | v_nat: forall n,
-             value (tm_nat n)
-  | v_fix: forall t,
-             value t ->
-             value (tm_fix t).
+             value (tm_nat n).
 
   Hint Constructors value.
 
@@ -160,10 +157,10 @@ Module STLCExtended.
                 (tm_case t x1 t1 x2 t2) ==> (tm_case t' x1 t1 x2 t2)
   | ST_CaseInl: forall T t x1 t1 x2 t2,
                 value (tm_inl T t) ->
-                (tm_case t x1 t1 x2 t2) ==> (subst x1 t t1)
+                (tm_case (tm_inl T t) x1 t1 x2 t2) ==> (subst x1 t t1)
   | ST_CaseInr: forall T t x1 t1 x2 t2,
                 value (tm_inr T t) ->
-                (tm_case t x1 t1 x2 t2) ==> (subst x2 t t2)
+                (tm_case (tm_inr T t) x1 t1 x2 t2) ==> (subst x2 t t2)
   | ST_Cons1: forall t1 t1' t2,
                t1 ==> t1' ->
                (tm_cons t1 t2) ==> (tm_cons t1' t2)
@@ -188,8 +185,7 @@ Module STLCExtended.
                 t ==> t' ->
                 (tm_pred t) ==> (tm_pred t')
   | ST_Pred2: forall n,
-                n <> 0 ->
-                (tm_pred (tm_nat n)) ==> tm_nat (n - 1)
+                (tm_pred (tm_nat (S n))) ==> tm_nat n
   | ST_PredZero: (tm_pred (tm_nat 0)) ==> (tm_nat 0)
   | ST_Mult1: forall t1 t1' t2,
                 t1 ==> t1' ->
@@ -218,7 +214,7 @@ Module STLCExtended.
               t ==> t' ->
               (tm_fix t) ==> (tm_fix t')
   | ST_FixAbs: forall x T t,
-                 (tm_fix (tm_abs x T t)) ==> (subst x (tm_fix (tm_abs x T t)) t)
+      (tm_fix (tm_abs x T t)) ==> (subst x (tm_fix (tm_abs x T t)) t)
   where "t1 ==> t2" := (step t1 t2).
 
   Tactic Notation "step_cases" tactic(first) ident(c) :=
@@ -357,7 +353,7 @@ Module STLCExtended.
     | Case_aux c "T_Mult"
     | Case_aux c "T_If0"
     | Case_aux c "T_Let"
-    | Case_aux c "T_T_Fix"
+    | Case_aux c "T_Fix"
     ].
 
 
@@ -479,14 +475,372 @@ Module STLCExtended.
         eauto 15.
       Qed.
 
-      (* Example reduces: *)
-      (*   test ==>* (tm_nat 5). *)
-      (* Proof. *)
-      (*   unfold test. *)
-      (*   eapply rsc_step. *)
-      (*   eapply ST_CaseInl *)
-      (*   apply v_suml. *)
-      (*   eapply v_suml. *)
-      (*   apply *)
+      Example reduces:
+        test ==>* (tm_nat 5).
+      Proof.
+        unfold test.
+        normalize.
+      Qed.
     End Sumtest1.
 
+    Module Sumtest2.
+      Definition test :=
+        tm_let
+          processSum
+          (tm_abs x (ty_sum ty_Nat ty_Nat)
+                  (tm_case (tm_var x)
+                           n (tm_var n)
+                           n (tm_if0 (tm_var n) (tm_nat 1) (tm_nat 0))))
+          (tm_pair
+             (tm_app (tm_var processSum) (tm_inl ty_Nat (tm_nat 5)))
+             (tm_app (tm_var processSum) (tm_inr ty_Nat (tm_nat 5)))).
+
+      Example typechecks:
+        has_type (@empty ty) test (ty_prod ty_Nat ty_Nat).
+      Proof.
+        unfold test.
+        eauto 15.
+      Qed.
+
+      Example reduces: test ==>*(tm_pair (tm_nat 5) (tm_nat 0)).
+      Proof.
+        unfold test.
+        normalize.
+      Qed.
+    End Sumtest2.
+
+    Module ListTest.
+      Definition test :=
+        tm_let l
+               (tm_cons (tm_nat 5) (tm_cons (tm_nat 6) (tm_nil ty_Nat)))
+               (tm_lcase (tm_var l)
+                         (tm_nat 0)
+                         x y (tm_mult (tm_var x) (tm_var x))).
+      Example typechecks:
+        has_type (@empty ty) test ty_Nat.
+      Proof.
+        unfold test.
+        eauto 20.
+      Qed.
+
+      Example reduces:
+        test ==>* (tm_nat 25).
+      Proof.
+        unfold test.
+        normalize.
+      Qed.
+    End ListTest.
+
+    Module FixTest1.
+
+      Definition fact :=
+        tm_fix
+          (tm_abs f (ty_arrow ty_Nat ty_Nat)
+                  (tm_abs a ty_Nat
+                          (tm_if0
+                             (tm_var a)
+                             (tm_nat 1)
+                             (tm_mult
+                                (tm_var a)
+                                (tm_app (tm_var f) (tm_pred (tm_var a))))))).
+
+      Example fact_typechecks:
+        has_type (@empty ty) fact (ty_arrow ty_Nat ty_Nat).
+      Proof.
+        unfold fact.
+        auto 10.
+      Qed.
+
+      Example fact_example:
+        (tm_app fact (tm_nat 4)) ==>* (tm_nat 24).
+      Proof.
+        unfold fact.
+        normalize.
+      Qed.
+    End FixTest1.
+
+    Module FixTest2.
+      Definition map :=
+        tm_abs g (ty_arrow ty_Nat ty_Nat)
+               (tm_fix
+                  (tm_abs f (ty_arrow (ty_List ty_Nat) (ty_List ty_Nat))
+                          (tm_abs l (ty_List ty_Nat)
+                                  (tm_lcase (tm_var l)
+                                            (tm_nil ty_Nat)
+                                            a l (tm_cons (tm_app (tm_var g) (tm_var a))
+                                                         (tm_app (tm_var f) (tm_var l))))))).
+      Example map_typechecks:
+        has_type empty map
+                 (ty_arrow (ty_arrow ty_Nat ty_Nat)
+                           (ty_arrow (ty_List ty_Nat)
+                                     (ty_List ty_Nat))).
+      Proof.
+        unfold map.
+        auto 10.
+      Qed.
+      Example map_example:
+        tm_app (tm_app map (tm_abs a ty_Nat (tm_succ (tm_var a))))
+               (tm_cons (tm_nat 1) (tm_cons (tm_nat 2) (tm_nil ty_Nat)))
+               ==>*
+               (tm_cons (tm_nat 2) (tm_cons (tm_nat 3) (tm_nil ty_Nat))).
+      Proof.
+        unfold map.
+        normalize.
+      Qed.
+
+    End FixTest2.
+
+    Module FixTest3.
+      Definition equal :=
+        tm_fix
+          (tm_abs eq (ty_arrow ty_Nat (ty_arrow ty_Nat ty_Nat))
+                  (tm_abs m ty_Nat
+                          (tm_abs n ty_Nat
+                                  (tm_if0 (tm_var m)
+                                          (tm_if0 (tm_var n) (tm_nat 1) (tm_nat 0))
+                                          (tm_if0 (tm_var n)
+                                                  (tm_nat 0)
+                                                  (tm_app (tm_app (tm_var eq)
+                                                                  (tm_pred (tm_var m)))
+                                                          (tm_pred (tm_var n)))))))).
+      Example equal_typechecks :
+        has_type (@empty ty) equal (ty_arrow ty_Nat (ty_arrow ty_Nat ty_Nat)).
+      Proof.
+        unfold equal.
+        auto 10.
+      Qed.
+
+
+      Example equal_example1:
+        (tm_app (tm_app equal (tm_nat 4)) (tm_nat 4)) ==>* (tm_nat 1).
+      Proof.
+        unfold equal.
+        normalize.
+      Qed.
+
+
+      Example equal_example2:
+  (tm_app (tm_app equal (tm_nat 4)) (tm_nat 5)) ==>* (tm_nat 0).
+      Proof.
+        unfold equal.
+        normalize.
+      Qed.
+    End FixTest3.
+
+    Module FixTest4.
+      
+      Definition eotest :=
+        tm_let evenodd
+               (tm_fix
+                  (tm_abs eo (ty_prod (ty_arrow ty_Nat ty_Nat) (ty_arrow ty_Nat ty_Nat))
+                          (tm_pair
+                             (tm_abs n ty_Nat
+                                     (tm_if0 (tm_var n)
+                                             (tm_nat 1)
+                                             (tm_app (tm_snd (tm_var eo)) (tm_pred (tm_var n)))))
+                             (tm_abs n ty_Nat
+                                     (tm_if0 (tm_var n)
+                                             (tm_nat 0)
+                                             (tm_app (tm_fst (tm_var eo)) (tm_pred (tm_var n))))))))
+               (tm_let even (tm_fst (tm_var evenodd))
+                       (tm_let odd (tm_snd (tm_var evenodd))
+                               (tm_pair
+                                  (tm_app (tm_var even) (tm_nat 3))
+                                  (tm_app (tm_var even) (tm_nat 4))))).
+
+      Example eotest_typechecks :
+  has_type (@empty ty) eotest (ty_prod ty_Nat ty_Nat).
+      Proof.
+        unfold eotest.
+        eauto 30.
+      Qed.
+
+      Example eotest_example1:
+        eotest ==>* (tm_pair (tm_nat 0) (tm_nat 1)).
+      Proof.
+        unfold eotest.
+        normalize.
+      Qed.
+    End FixTest4.
+  End Examples.
+
+  Theorem progress: forall t T,
+      has_type empty t T ->
+      value t \/ exists t', t ==> t'.
+  Proof with eauto.
+    intros t T Ht.
+    remember (@empty ty) as Gamma.
+    generalize dependent HeqGamma.
+    has_type_cases (induction Ht) Case; intros HeqGamma; subst.
+    Case "T_Var".
+     inversion H.
+    Case "T_Abs".
+      left...
+    Case "T_App".
+      right.
+      destruct IHHt1; subst...
+      SCase "t1 is a value".
+        destruct IHHt2; subst...
+        SSCase "t2 is a value".
+          inversion H; subst; try (solve by inversion).
+          exists (subst x t2 t12)...
+        SSCase "t2 steps".
+          destruct H0 as [t2' Hstp].
+          exists (tm_app t1 t2')...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        exists (tm_app t1' t2)...
+    Case "T_Pair".
+      destruct IHHt1; subst...
+      SCase "t1 is a value".
+        destruct IHHt2; subst...
+        SSCase "t2 steps".
+          right.
+          destruct H0 as [t2' Hstp].
+          exists (tm_pair t1 t2')...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        right...
+    Case "T_Fst".
+      right.
+      destruct IHHt; subst...
+      SCase "t1 is a value".
+        inversion H; subst; try (solve by inversion).
+        exists t0...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        exists (tm_fst t1')...
+    Case "T_Snd".
+      right.
+      destruct IHHt; subst...
+      SCase "t1 is a value".
+        inversion H; subst; try (solve by inversion).
+        exists t2...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        exists (tm_snd t1')...
+    Case "T_Inl".
+      destruct IHHt; subst...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        right.
+        exists (tm_inl T2 t1')...
+    Case "T_Inr".
+      destruct IHHt; subst...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        right.
+        exists (tm_inr T1 t1')...
+    Case "T_Case".
+      right.
+      destruct IHHt1; subst...
+      SCase "t is a value".
+        inversion H; subst; try (solve by inversion).
+        SSCase "t is inl".
+          exists (subst v1 t0 t1)...
+        SSCase "t is inr".
+          exists (subst v2 t0 t2)...
+      SCase "t steps".
+        destruct H as [t1' Hstp].
+        exists (tm_case t1' v1 t1 v2 t2)...
+    Case "T_Nil".
+      left...
+    Case "T_Cons".
+      destruct IHHt1; subst...
+      SCase "t1 is a value".
+        destruct IHHt2; subst...
+        SSCase "t2 steps".
+          right.
+          destruct H0 as [t2' Hstp].
+          exists (tm_cons t1 t2')...
+      SCase "t1 steps".
+        right.
+        destruct H as [t1' Hstp].
+        exists (tm_cons t1' t2)...
+    Case "T_Lcase".
+      right.
+      destruct IHHt1; subst...
+      SCase "t1 is a value".
+        inversion H; subst; try (solve by inversion).
+        SSCase "t1 is nil".
+          exists t2...
+        SSCase "t1 is a cons".
+          exists (subst vt t4 (subst vh t0 t3))...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        exists (tm_lcase t1' t2 vh vt t3)...
+     Case "T_Nat".
+       left...
+     Case "T_Succ".
+       right.
+       destruct IHHt; subst...
+       SCase "n is a value".
+         inversion H; subst; try (solve by inversion).
+         exists (tm_nat (1 + n0))...
+       SCase "n steps".
+         destruct H as [t' Hstp].
+         exists (tm_succ t')...
+     Case "T_Pred".
+       right.
+       destruct IHHt; subst...
+       SCase "n is a value".
+         inversion H; subst; try (solve by inversion).
+         remember (beq_nat n0  0) as Heq0.
+         case n0.
+         SSCase "n is 0".
+           exists (tm_nat 0)...
+         SSCase "n > 0".
+           intros n.
+           exists (tm_nat n)...
+       SCase "n steps".
+         destruct H as [n' Hstp].
+         exists (tm_pred n')...
+     Case "T_Mult".
+       right.
+       destruct IHHt1; subst...
+       SCase "n is a value".
+         destruct IHHt2; subst...
+         SSCase "m is a value".
+           inversion H; subst; try (solve by inversion).
+           inversion H0; subst; try (solve by inversion).
+           exists (tm_nat(n0 * n))...
+         SSCase "m steps".
+           destruct H0 as [m' Hstp].
+           exists (tm_mult n m')...
+       SCase "n steps".
+         destruct H as [n' Hstp].
+         exists (tm_mult n' m)...
+     Case "T_If0".
+       right.
+       destruct IHHt1; subst...
+       SCase "tc is a value".
+         inversion H; subst; try (solve by inversion).
+         case n.
+         SSCase "n is 0".
+           exists tt...
+         SSCase "n is not 0".
+           exists te...
+       SCase "tc stepts".
+         destruct H as [tc' Hstp].
+         exists (tm_if0 tc' tt te)...
+    Case "T_Let".
+      right.
+      destruct IHHt1; subst...
+      SCase "t1 steps".
+        destruct H as [t1' Hstp].
+        exists (tm_let v t1' t)...
+    Case "T_Fix".
+      right.
+      destruct IHHt; subst...
+      SCase "t is a value".
+        inversion H; subst; try (solve by inversion).
+        exists (subst x (tm_fix (tm_abs x T11 t12)) t12)...
+      SCase "t steps".
+        destruct H as [t' Hstp].
+        exists (tm_fix t')...
+  Qed.
+
+
+
+End STLCExtended.
+  
