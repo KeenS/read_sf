@@ -77,7 +77,7 @@ Module STLCExtended.
         tm_cons (subst x s t1) (subst x s t2)
       | tm_lcase t' tnil yhd ytl tcons =>
         tm_lcase (subst x s t') (subst x s tnil) yhd ytl 
-                 (if orb (beq_id yhd x) (beq_id ytl x)
+                 (if orb (beq_id ytl x) (beq_id yhd x)
                   then tcons
                   else (subst x s tcons))
       | tm_nat n =>
@@ -175,7 +175,7 @@ Module STLCExtended.
                 (tm_lcase (tm_nil T) tnil xcons1 xcons2 tcons) ==> tnil
   | ST_LCaseCons: forall t1 t2 tnil xcons1 xcons2 tcons,
                 value (tm_cons t1 t2) ->
-                (tm_lcase (tm_cons t1 t2) tnil xcons1 xcons2 tcons) ==> (subst xcons2 t2 (subst xcons1 t1 tcons))
+                (tm_lcase (tm_cons t1 t2) tnil xcons1 xcons2 tcons) ==> (subst xcons1 t1 (subst xcons2 t2 tcons))
   | ST_Succ1: forall t t',
                 t ==> t' ->
                 (tm_succ t) ==> (tm_succ t')
@@ -293,7 +293,7 @@ Module STLCExtended.
   | T_Case: forall Gamma T1 T2 T t v1 t1 v2 t2,
               has_type Gamma t (ty_sum T1 T2) ->
               has_type (extend Gamma v1 T1) t1 T ->
-              has_type (extend Gamma v2 T1) t2 T ->
+              has_type (extend Gamma v2 T2) t2 T ->
               has_type Gamma (tm_case t v1 t1 v2 t2) T
   | T_Nil: forall Gamma T,
              has_type Gamma (tm_nil T) (ty_List T)
@@ -765,7 +765,7 @@ Module STLCExtended.
         SSCase "t1 is nil".
           exists t2...
         SSCase "t1 is a cons".
-          exists (subst vt t4 (subst vh t0 t3))...
+          exists (subst vh t0 (subst vt t4 t3))...
       SCase "t1 steps".
         destruct H as [t1' Hstp].
         exists (tm_lcase t1' t2 vh vt t3)...
@@ -840,7 +840,399 @@ Module STLCExtended.
         exists (tm_fix t')...
   Qed.
 
+  Inductive appears_free_in: id -> tm -> Prop :=
+  | afi_var: forall x,
+      appears_free_in x (tm_var x)
+  | afi_app1: forall x t1 t2,
+      appears_free_in x t1 -> appears_free_in x (tm_app t1 t2)
+  | afi_app2: forall x t1 t2,
+      appears_free_in x t2 -> appears_free_in x (tm_app t1 t2)
+  | afi_abs: forall x y T11 t12,
+      y <> x ->
+      appears_free_in x t12 ->
+      appears_free_in x (tm_abs y T11 t12)
+  | afi_pair1: forall x t1 t2,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_pair t1 t2)
+  | afi_pair2: forall x t1 t2,
+      appears_free_in x t2 ->
+      appears_free_in x (tm_pair t1 t2)
+  | afi_fst: forall x t1,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_fst t1)
+  | afi_snd: forall x t1,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_snd t1)
+  | afi_inl: forall x t1 T1,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_inl T1 t1)
+  | afi_inr: forall x t1 T1,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_inr T1 t1)
+  | afi_case1: forall x t x1 t1 x2 t2,
+      appears_free_in x t ->
+      appears_free_in x (tm_case t x1 t1 x2 t2)
+  | afi_case2: forall x t x1 t1 x2 t2,
+      x1 <> x ->
+      appears_free_in x t1 ->
+      appears_free_in x (tm_case t x1 t1 x2 t2)
+  | afi_case3: forall x t x1 t1 x2 t2,
+      x2 <> x ->
+      appears_free_in x t2 ->
+      appears_free_in x (tm_case t x1 t1 x2 t2)
+  | afi_cons1: forall x t1 t2,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_cons t1 t2)
+  | afi_cons2: forall x t1 t2,
+      appears_free_in x t2 ->
+      appears_free_in x (tm_cons t1 t2)
+  | afi_lcase1: forall x t t1 xh xt t2,
+      appears_free_in x t ->
+      appears_free_in x (tm_lcase t t1 xh xt t2)
+  | afi_lcase2: forall x t t1 xh xt t2,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_lcase t t1 xh xt t2)
+  | afi_lcase3: forall x t t1 xh xt t2,
+      xt <> x ->
+      xh <> x ->
+      appears_free_in x t2 ->
+      appears_free_in x (tm_lcase t t1 xh xt t2)
+  | afi_succ: forall x n,
+      appears_free_in x n ->
+      appears_free_in x (tm_succ n)
+  | afi_pred: forall x n,
+      appears_free_in x n ->
+      appears_free_in x (tm_pred n)
+  | afi_mult1: forall x n m,
+      appears_free_in x n ->
+      appears_free_in x (tm_mult n m)
+  | afi_mult2: forall x n m,
+      appears_free_in x m ->
+      appears_free_in x (tm_mult n m)
+  | afi_if01: forall x tc tt te,
+      appears_free_in x tc ->
+      appears_free_in x (tm_if0 tc tt te)
+  | afi_if02: forall x tc tt te,
+      appears_free_in x tt ->
+      appears_free_in x (tm_if0 tc tt te)
+  | afi_if03: forall x tc tt te,
+      appears_free_in x te ->
+      appears_free_in x (tm_if0 tc tt te)
+  | afi_let1: forall x x1 t1 t2,
+      appears_free_in x t1 ->
+      appears_free_in x (tm_let x1 t1 t2)
+  | afi_let2: forall x x1 t1 t2,
+      x1 <> x ->
+      appears_free_in x t2 ->
+      appears_free_in x (tm_let x1 t1 t2)
+  | afi_fix: forall x t,
+      appears_free_in x t ->
+      appears_free_in x (tm_fix t)
+  .
 
+  Hint Constructors appears_free_in.
+
+  Lemma context_invariance: forall Gamma Gamma' t S,
+      has_type Gamma t S ->
+      (forall x, appears_free_in x t -> Gamma x = Gamma' x) ->
+      has_type Gamma' t S.
+  Proof with eauto.
+    intros. generalize dependent Gamma'.
+    has_type_cases (induction H) Case;
+      intros Gamma' Heqv...
+    Case "T_Var".
+      apply T_Var...
+      rewrite <- Heqv...
+    Case "T_Abs".
+      apply T_Abs...
+      apply IHhas_type.
+      intros y Hafi.
+      unfold extend.
+      remember (beq_id x y) as e.
+      destruct e...
+    Case "T_Pair".
+      apply T_Pair...
+    Case "T_Case".
+      eapply T_Case...
+      SCase "t1".
+        apply IHhas_type2.
+        intros y Hafi.
+        unfold extend.
+        remember (beq_id v1 y) as e.
+        destruct e...
+      SCase "t2".
+        apply IHhas_type3.
+        intros y Hafi.
+        unfold extend.
+        remember (beq_id v2 y) as e.
+        destruct e...
+    Case "T_Cons".
+      apply T_Cons...
+    Case "T_Lcase".
+      eapply T_Lcase...
+      SCase "t3".
+        apply IHhas_type3.
+        intros y Hafi.
+        unfold extend.
+        remember (beq_id vt y) as e1.
+        remember (beq_id vh y) as e2.
+        destruct e1...
+        SSCase "vt <> y".
+        symmetry in Heqe1.
+        apply beq_id_false_not_eq in Heqe1.
+        destruct e2...
+    Case "T_Mult".
+      apply T_Mult...
+    Case "T_If0".
+      apply T_If0...
+    Case "T_Let".
+      eapply T_Let...
+      apply IHhas_type2.
+      intros y Hafi.
+      unfold extend.
+      remember (beq_id v y) as e.
+      destruct e...
+  Qed.
+
+  Lemma free_in_context: forall x t T Gamma,
+      appears_free_in x t ->
+      has_type Gamma t T ->
+      exists T', Gamma x = Some T'.
+  Proof with eauto.
+    intros x t T Gamma Hafi Htyp.
+    has_type_cases (induction Htyp) Case; inversion Hafi; subst...
+    Case "T_Abs".
+      destruct IHHtyp as [T' Hctx]...
+      exists T'.
+      unfold extend in Hctx.
+      apply not_eq_beq_id_false in H2.
+      rewrite H2 in Hctx...
+    Case "T_Case".
+      SCase "t1".
+        destruct IHHtyp2 as [T' Hctx]...
+        exists T'.
+        unfold extend in Hctx.
+        apply not_eq_beq_id_false in H2.
+        rewrite H2 in Hctx...
+      SCase "t2".
+        destruct IHHtyp3 as [T' Hctx]...
+        exists T'.
+        unfold extend in Hctx.
+        apply not_eq_beq_id_false in H2.
+        rewrite H2 in Hctx...
+    Case "T_Lcase".
+      SCase "t3".
+        destruct IHHtyp3 as [T' Hctx]...
+        exists T'.
+        unfold extend in Hctx.
+        apply not_eq_beq_id_false in H3.
+        apply not_eq_beq_id_false in H6.
+        rewrite H3 in Hctx.
+        rewrite H6 in Hctx...
+    Case "T_Let".
+      destruct IHHtyp2 as [T' Hctx]...
+      exists T'.
+      unfold extend in Hctx.
+      apply not_eq_beq_id_false in H2.
+      rewrite H2 in Hctx...
+  Qed.
+
+
+  Lemma substitution_preserves_typing: forall Gamma x U v t S,
+      has_type (extend Gamma x U) t S ->
+      has_type empty v U ->
+      has_type Gamma (subst x v t) S.
+  Proof with eauto.
+    intros Gamma x U v t S Htypt Htypv.
+    generalize dependent Gamma.
+    generalize dependent S.
+
+    tm_cases(induction t) Case;
+      intros S Gamma Htypt; simpl; inversion Htypt; subst...
+    Case "tm_var".
+      remember (beq_id x i) as e. destruct e.
+      SCase "x = y".
+        apply beq_id_eq in Heqe. subst.
+        unfold extend in H1.
+        rewrite <- beq_id_refl in H1.
+        inversion H1; subst. clear H1.
+        eapply context_invariance...
+        intros x Hcontra.
+        destruct (free_in_context _ _ S empty Hcontra) as [T' HT']...
+        inversion HT'.
+      SCase "x <> y".
+        apply T_Var...
+        unfold extend in H1.
+        rewrite <- Heqe in H1...
+    Case "tm_abs".
+      rename i into y.
+      rename t into T11.
+      apply T_Abs...
+      remember (beq_id x y) as e. destruct e.
+      SCase "x = y".
+        eapply context_invariance...
+        apply beq_id_eq in Heqe. subst.
+        intros x Hafi.
+        unfold extend.
+        destruct (beq_id y x)...
+      SCase "x <> y".
+        apply IHt.
+        eapply context_invariance...
+        intros z Hafi.
+        unfold extend.
+        remember (beq_id y z) as e0. destruct e0...
+        apply beq_id_eq in Heqe0.
+        subst.
+        rewrite <- Heqe...
+   Case "tm_case".
+     eapply T_Case...
+     SCase "t2".
+       remember (beq_id x i) as e. destruct e.
+       SSCase "x = i".
+         apply beq_id_eq in Heqe. subst.
+         eapply context_invariance...
+         intros x Hafi.
+         unfold extend.
+         remember (beq_id i x) as e.
+         destruct e...
+       SSCase  "x <> i".
+         apply IHt2.
+         eapply context_invariance...
+         intros z Hafi.
+         unfold extend. 
+         remember (beq_id i z) as e. destruct e...
+         apply beq_id_eq in Heqe0.
+         subst.
+         rewrite <- Heqe...
+     SCase "t3".
+       remember (beq_id x i0) as e. destruct e.
+       SSCase "x = i0".
+         apply beq_id_eq in Heqe. subst.
+         eapply context_invariance...
+         intros x Hafi.
+         unfold extend.
+         remember (beq_id i0 x) as e.
+         destruct e...
+       SSCase "x <> i0".
+         apply IHt3.
+         eapply context_invariance...
+         intros z Hafi.
+         unfold extend.
+         remember (beq_id i0 z) as e. destruct e...
+         apply beq_id_eq in Heqe0.
+         subst.
+         rewrite <- Heqe...
+    Case "tm_lcase".
+      eapply T_Lcase...
+      SCase "t3".
+        remember (beq_id i0 x) as e1.
+        destruct e1.
+        SSCase "i = x".
+          apply beq_id_eq in Heqe1. subst. simpl.        
+          eapply context_invariance...
+          intros x0 Hafi.
+          unfold extend.
+          remember (beq_id x x0) as e. destruct e...
+        SSCase "i <> x".
+          simpl.
+          remember (beq_id i x) as e.
+          destruct e...
+          SSSCase  "i0 = x".
+            apply beq_id_eq in Heqe.
+            symmetry in Heqe1.
+            apply beq_id_false_not_eq in Heqe1.
+            subst.
+            eapply context_invariance...
+            intros x0 Hafi.
+            unfold extend.
+            remember (beq_id x x0) as e. destruct e...
+          SSSCase "i0 <> x".
+            apply IHt3.
+            eapply context_invariance...
+            intros x0 Hafi.
+            unfold extend.
+            remember (beq_id i0 x0) as e. destruct e...
+            remember (beq_id x x0) as e. destruct e...
+            apply beq_id_eq in Heqe0. subst.
+            rewrite <- beq_id_sym in Heqe.
+            rewrite beq_id_sym in Heqe2.
+            rewrite  <- Heqe1 in Heqe2.
+            inversion Heqe2.
+            remember (beq_id i x0) as e. destruct e...
+            remember (beq_id x x0) as e. destruct e...
+            apply beq_id_eq in Heqe2. subst.
+            rewrite beq_id_sym in Heqe3.
+            rewrite <- Heqe in Heqe3.
+            inversion Heqe3.
+    Case "tm_let"  .
+      eapply T_Let.
+      SCase "x = i".
+        apply  IHt1...
+      SCase "t2".
+        remember (beq_id x i) as e. destruct e...
+        SSCase "x = i".
+          eapply context_invariance...
+          intros x0 Hafi.
+          unfold extend.
+          remember (beq_id i x0) as e. destruct e...
+          remember (beq_id x x0) as e. destruct e...
+          apply beq_id_eq in Heqe.
+          apply beq_id_eq in Heqe1.
+          subst.
+          symmetry in Heqe0.
+          subst.
+          rewrite <- beq_id_refl in Heqe0.
+          inversion Heqe0.
+        SSCase "x <> i".
+          eapply IHt2.
+          eapply context_invariance...
+          intros x0 Hafi.
+          unfold extend.
+          remember (beq_id x i) as e. destruct e...
+          inversion Heqe.
+          remember (beq_id i x0) as e. destruct e...
+          apply beq_id_eq in Heqe1. subst.
+          rewrite <- Heqe0...
+  Qed.
+
+  Theorem preservation: forall t t' T,
+      has_type empty t T ->
+      t ==> t' ->
+      has_type empty t' T.
+  Proof with eauto.
+    intros t t' T HT.
+    remember (@empty ty) as Gamma.
+    generalize dependent HeqGamma.
+    generalize dependent t'.
+    has_type_cases (induction HT) Case;
+      intros t' HeqGamma HE; subst; inversion HE; subst...
+    Case "T_App".
+      SCase "ST_AppAbs".
+       apply substitution_preserves_typing with T1...
+       inversion HT1...
+    Case "T_Fst".
+      inversion HT...
+    Case "T_Snd".
+      inversion HT...
+    Case "T_Case".
+      SCase "ST_CaseInl".
+        apply substitution_preserves_typing with T1...
+        inversion HT1...
+      SCase "ST_CaseInr".
+        apply substitution_preserves_typing with T2...
+        inversion HT1...
+    Case "T_Lcase".
+      apply substitution_preserves_typing with T1...
+      apply substitution_preserves_typing with (ty_List T1)...
+      inversion HT1...
+      eapply context_invariance...
+      inversion HT1...
+    Case "T_Let".
+      apply substitution_preserves_typing with T1...
+      inversion HT...
+    Case "T_Fix".
+      apply substitution_preserves_typing with T...
+  Qed.
 
 End STLCExtended.
   
