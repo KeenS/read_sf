@@ -195,8 +195,53 @@ Proof with eauto.
   Case "ST_PredSucc".
   inversion H2.
   reflexivity.
-  subst.
-Admitted.
+  inversion H; subst.
+  inversion H1. inversion H3.
+  inversion H1. inversion H3. subst.
+  assert (value t).
+  unfold value.
+  right.
+  apply H4.
+  apply value_is_nf in H0.
+  unfold normal_form in H0.
+  destruct H0.
+  exists t1'1.
+  apply H7.
+  Case "ST_Pred".
+  inversion H2; subst.  inversion H1.
+  inversion H1.
+  assert (value y2).
+  unfold value. right. apply H0.
+  apply value_is_nf in H5.
+  unfold normal_form in H5.
+  destruct H5.
+  exists t1'0.
+  apply H3. apply IHstep in H0. subst. reflexivity.
+  Case "ST_IszeroZero".
+  inversion H2. reflexivity.
+  inversion H0.
+  Case "ST_IszeroSucc".
+  inversion H2; subst.
+  reflexivity.
+  inversion H1.
+  assert (value t1). unfold value. right. apply H.
+  apply value_is_nf in H5.
+  unfold normal_form in H5.
+  destruct H5.
+  exists t1'0. apply H3.
+  Case "ST_Iszero".
+  inversion H2; subst.
+  inversion H1.
+  inversion H1.
+  assert (value t0). right. apply H0.
+  apply value_is_nf in H5.
+  unfold normal_form in H5.
+  destruct H5.
+  exists t1'0.
+  apply H3.
+  apply IHstep in H0. subst.
+  reflexivity.
+Qed.
 
 Inductive ty: Type :=
 | ty_Bool: ty
@@ -233,4 +278,147 @@ Tactic Notation "has_type_cases" tactic(first) ident(c) :=
 
 Hint Constructors has_type.
 
+
+Example has_type_1:
+  has_type (tm_if tm_false tm_zero (tm_succ tm_zero)) ty_Nat.
+Proof.
+  apply T_If.
+  apply T_False.
+  apply T_Zero.
+  apply T_Succ.
+  apply T_Zero.
+Qed.
+
+Example has_type_not:
+  ~ has_type (tm_if tm_false tm_zero tm_true) ty_Bool.
+Proof.
+  intros Contra. solve by inversion 2.
+Qed.
+
+Example succ_hastype_nat_hastype_nat: forall t,
+    has_type (tm_succ t) ty_Nat ->
+    has_type t ty_Nat.
+Proof.
+  intros t H.
+  inversion H.
+  apply H1.
+Qed.
+
+Theorem progress: forall t T,
+    has_type t T ->
+    value t \/ exists t', t ==> t'.
+Proof with auto.
+  intros t T HT.
+  has_type_cases (induction HT) Case...
+  Case "T_If".
+  right. destruct IHHT1.
+  SCase "t1 is a value". destruct H.
+  SSCase "t1 is a bvalue". destruct H.
+  SSSCase "t1 is tm_true".
+  exists t2...
+  SSSCase "t1 is tm_false".
+  exists t3...
+  SSCase "t1 is an nvalue".
+  solve by inversion 2.
+  SCase "t1 can take a step".
+  destruct H as [t1' H1].
+  exists (tm_if t1' t2 t3)...
+  Case "T_Succ".
+  destruct IHHT.
+  SCase "t1 is a value".
+  left.
+  unfold value. right.
+  unfold value in H.
+  destruct H.
+  SSCase "t1 is a bvalue".
+  inversion H; subst; inversion HT.
+  SSCase "t1 is an nvalue".
+  apply nv_succ. apply H.
+  SCase "t1 can take a step".
+  right. destruct H.
+  exists (tm_succ x)...
+  Case "T_Pred".
+  right. destruct IHHT.
+  SCase "t1 is a value".
+  unfold value in H.
+  destruct H.
+  SSCase "t1 is a bvalue".
+  inversion H; subst; inversion HT.
+  SSCase "t1 is a nvalue".
+  inversion H. subst.
+  exists tm_zero...
+  exists t...
+  SCase "t1 take a step".
+  destruct H.
+  exists (tm_pred x)...
+  Case "T_Iszero".
+  right. destruct IHHT.
+  SCase "t1 is a value".
+  destruct H.
+  SSCase "t1 is a bvalue".
+  inversion H; subst; inversion HT.
+  SSCase "t1 is a nvalue".
+  inversion H.
+  exists tm_true...
+  exists tm_false...
+  SCase "t1 take a step".
+  destruct H.
+  exists (tm_iszero x)...
+Qed.
+
+Theorem preservation: forall t t' T,
+    has_type t T ->
+    t ==> t' ->
+    has_type t' T.
+Proof with auto.
+  intros t t' T HT HE.
+  generalize dependent t'.
+  has_type_cases (induction HT) Case;
+    intros t' HE;
+    try (solve by inversion).
+  Case "T_If"; inversion HE; subst.
+  SCase "ST_IFTrue". assumption.
+  SCase "ST_IFFalse". assumption.
+  SCase "ST_If". apply T_If; try assumption.
+  apply IHHT1; assumption.
+  Case "T_Succ".
+  inversion HE; subst.
+  apply IHHT in H0.
+  apply T_Succ. apply H0.
+  Case "T_Pred".
+  inversion HE; subst.
+  SCase "t1 is tm_zero".
+  apply T_Zero.
+  inversion HT.
+  SCase "t1 is (tm_succ t')".
+  assumption.
+  SCase "t1 take a step".
+  apply IHHT in H0.
+  inversion HE; subst. inversion H1.
+  apply T_Pred. assumption.
+  Case "T_Iszero".
+  inversion HE; subst.
+  SCase "t1 is tm_true".
+  apply T_True.
+  SCase "t1 is tm_false".
+  apply T_False.
+  SCase "t1 take a step".
+  apply IHHT in H0.
+  inversion HE; subst.
+  apply T_Iszero. assumption.
+Qed.
+
+Definition stepmany := (refl_step_closure step).
+Notation "t1 '==>*' t2" := (stepmany t1 t2) (at level 40).
+
+Corollary soundness : forall t t' T,
+    has_type t T ->
+    t ==>* t' ->
+    ~(stuck t').
+Proof.
+  intros t t' T HT P. induction P; intros [R S].
+  destruct (progress x T HT); auto.
+  apply IHP. apply (preservation x y T HT H).
+  unfold stuck. split; auto.
+Qed.
 
